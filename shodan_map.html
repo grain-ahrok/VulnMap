@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Vuln Map</title>
+  <!-- Google Map API 키 -->
+  <script async defer 
+    src="https://maps.googleapis.com/maps/api/js?key={API_KEY}">
+  </script>
+  <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
+  <style>
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+  <script>
+    // 마커 클릭시 페이지 이동
+    const createMarker = (map, location, vulns, ip_str, colorFn) => {
+      const iconSize = Math.min(30);
+      const marker = new google.maps.Marker({
+        icon: circleIcon(colorFn(1), iconSize),
+        position: { lat: location.latitude, lng: location.longitude },
+        label: {
+          text: "1",
+          color: "white",
+          fontSize: "14px"
+        }
+      });
+
+      const infoWindow = new google.maps.InfoWindow();
+
+      // 마커 클릭 시 페이지 이동
+      google.maps.event.addListener(marker, "click", function () {
+        const targetUrl = `https://www.shodan.io/host/${ip_str}`;
+        window.open(targetUrl, '_blank');
+      });
+
+      // 마우스 오버 시 InfoWindow에 설명을 표시
+      google.maps.event.addListener(marker, "mouseover", function () {
+        const contentString = `
+            <div>
+              <h3>IP: ${ip_str}</h3>
+              <p>위치: ${location.city}, ${location.country_name}</p>
+              <p>취약점: ${Object.keys(vulns).join(', ')}</p>
+            </div>
+          `;
+        infoWindow.setContent(contentString); // InfoWindow에 콘텐츠 설정
+        infoWindow.open(map, marker); // 마커 위치에 InfoWindow 띄우기
+      });
+
+      // 마우스 아웃 시 InfoWindow 닫기
+      google.maps.event.addListener(marker, "mouseout", function () {
+        infoWindow.close(); // InfoWindow 닫기
+      });
+
+      return marker;
+    };
+
+    // 클러스터링 및 마커 추가 함수
+    const loadMarkers = (data, map, colorFn) => {
+      const markers = [];
+      data.matches.forEach((item) => {
+        const { location, vulns, ip_str } = item;
+        if (vulns && Object.keys(vulns).length > 0) {
+          Object.keys(vulns).forEach(() => {
+            const marker = createMarker(map, location, vulns, ip_str, colorFn);
+            markers.push(marker);
+          });
+        }
+      });
+      return markers;
+    };
+
+    // 클러스터링 설정 함수
+    const createClusterer = (markers, map, colorFn) => {
+      return new markerClusterer.MarkerClusterer({
+        markers,
+        map,
+        renderer: {
+          render: ({ count, markers: clusteredMarkers }) => {
+            const iconSize = Math.min(count, 8000)/100 + 20;
+            const marker = new google.maps.Marker({
+              position: clusteredMarkers[0].getPosition(),
+              icon: circleIcon(colorFn(count), iconSize),
+              label: {
+                text: `${count}`, // 클러스터 안의 마커 개수 표시
+                color: "white",
+                fontSize: "14px",
+              },
+            });
+            return marker;
+          },
+        },
+      });
+    };
+
+    async function initMap() {
+      const map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 37.532, lng: 127.4194 },
+        zoom: 10,
+      });
+
+      // 첫 번째 데이터셋 처리 (red markers)
+      let markers = [];
+      const data1 = await fetchData('./output.json');
+      markers = loadMarkers(data1, map, getRedColor);
+
+      // 클러스터링 설정 (red markers)
+      createClusterer(markers, map, getRedColor);
+
+      // 두 번째 데이터셋 처리 (blue markers)
+      let markers2 = [];
+      const data2 = await fetchData('./output2.json');
+      markers2 = loadMarkers(data2, map, getBlueColor);
+
+      // 클러스터링 설정 (blue markers)
+      createClusterer(markers2, map, getBlueColor);
+    }
+
+    // 데이터 fetching 함수
+    async function fetchData(url) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to load JSON data from ${url}`);
+      }
+      return response.json();
+    }
+
+    // circleIcon 함수: 색상과 크기를 인자로 받아 Google Maps Marker 설정 반환
+    const circleIcon = (color, size) => ({
+      path: google.maps.SymbolPath.CIRCLE,
+      fillColor: color, // 전달받은 색상
+      fillOpacity: 0.9,
+      scale: size, // 원의 크기
+      strokeColor: "white",
+      strokeWeight: 0, // 원 주변의 테두리
+    });
+
+    // 빨간색 색상 함수
+    const getRedColor = (value) => {
+      if (value >= 3000) {
+        return "rgba(255, 0, 0, 0.9)";
+      } else if (value >= 2000) {
+        return "rgba(255, 50, 50, 0.85)";
+      } else if (value >= 500) {
+        return "rgba(255, 100, 100, 0.8)";
+      } else {
+        return "rgba(255, 150, 150, 0.8)";
+      }
+    };
+
+    // 파란색 색상 함수
+    const getBlueColor = (value) => {
+      if (value >= 3000) {
+        return "rgba(0, 0, 255, 0.9)";
+      } else if (value >= 2000) {
+        return "rgba(50, 50, 255, 0.85)";
+      } else if (value >= 500) {
+        return "rgba(100, 100, 255, 0.8)";
+      } else {
+        return "rgba(150, 150, 255, 0.8)";
+      }
+    };
+
+    // 초기화
+    window.onload = initMap;
+
+
+  </script>
+</body>
+
+</html>
